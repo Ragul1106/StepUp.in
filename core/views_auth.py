@@ -79,3 +79,30 @@ def logout_view(request):
 def me(request):
     user = request.user
     return Response({"id": user.id, "username": user.username, "email": user.email})
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def resend_verification_email(request):
+    """
+    Resend email verification link to inactive users.
+    """
+    email = request.data.get("email")
+    if not email:
+        return Response({"detail": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        user = User.objects.get(email__iexact=email)
+        if user.is_active:
+            return Response({"detail": "Account already active."}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Generate token and send verification email
+        token = signer.sign(user.pk)
+        verify_path = reverse("auth-verify-email")
+        verify_url = f"{request.scheme}://{request.get_host()}{verify_path}?token={token}"
+        subject = "Verify your StepUp account"
+        message = f"Please confirm your email by visiting:\n\n{verify_url}\n\nThis link will expire in 1 day."
+        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email], fail_silently=False)
+        return Response({"detail": "Verification email sent."})
+    
+    except User.DoesNotExist:
+        return Response({"detail": "No account found with this email."}, status=status.HTTP_400_BAD_REQUEST)
